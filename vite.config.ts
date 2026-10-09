@@ -6,6 +6,8 @@ export default defineConfig({
   // GitHub Pages serves the build from /clean-paste/ (set via VITE_BASE in build:pages).
   base: process.env.VITE_BASE ?? "/",
   plugins: [react()],
-  build: { target: "es2022" },
+  worker: { format: "es" },
+  optimizeDeps: { exclude: ["@huggingface/transformers"] },
+  build: { target: "es2022", chunkSizeWarningLimit: 1500 },
   test: { environment: "node", globals: true, include: ["src/**/*.test.ts"] },
 });

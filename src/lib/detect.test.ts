@@ -42,6 +42,38 @@ describe("detectors", () => {
     expect(restore("use [PASSWORD_1]", r.map)).toBe("use p@ss");
   });
 
+  it("understands free-form labels", () => {
+    const cases: [string, string][] = [
+      ["card number - 4111 1111 1111 1111", "card number - [CARD_1]"],
+      ["my card no is 4111-1111-1111-1111", "my card no is [CARD_1]"],
+      ["card : 4111111111111111", "card : [CARD_1]"],
+      ["card no 1234 5678 9012 3456", "card no [CARD_1]"],
+      ["password - hunter2", "password - [PASSWORD_1]"],
+      ["my password is hunter", "my password is [PASSWORD_1]"],
+      ["my pin 4821", "my pin [PASSWORD_1]"],
+      ["aadhaar 1234 5678 9012", "aadhaar [AADHAAR_1]"],
+      ["call me at 98765 43210", "call me at [PHONE_1]"],
+      ["reach me on 987 654 3210 anytime", "reach me on [PHONE_1] anytime"],
+      ["cvv is 123, expiry 08/27", "cvv is [CVV_1], expiry [EXPIRY_1]"],
+      ["pay to rahul@okaxis, IFSC HDFC0001234, acc no 123456789012", "pay to [UPI_1], IFSC [IFSC_1], acc no [ACCOUNT_1]"],
+      ["my name is Rahul Sharma and I live in Saket, Delhi", "my name is [NAME_1] and I live in [ADDRESS_1]"],
+      ["token=a1B2c3D4e5F6g7H8", "token=[KEY_1]"],
+    ];
+    for (const [i, o] of cases) expect(clean(i).text).toBe(o);
+  });
+
+  it("does not flag normal sentences, years or prices", () => {
+    for (const t of [
+      "In 2024 we paid ₹4,999 and $1,299.99 for 3 laptops.",
+      "The password policy changed last year.",
+      "Call the team on Monday about the card design.",
+      "Order total was 12500 rupees on 12/05/2025.",
+      "My account is fine, thanks. Number of users: 42.",
+      "Version 1.2.3 is out. See page 404 for details.",
+    ])
+      expect(detect(t)).toEqual([]);
+  });
+
   it("ignores words that merely contain a label", () => {
     for (const t of ["keyboard: mechanical", "passage - long", "tokenize: words", "the key is practice", "monkey=1", "pin the map"])
       expect(detect(t)).toEqual([]);

@@ -1,5 +1,39 @@
-import { useMemo, useState } from "react";
-import { CATEGORIES, clean, restore, summary, type Category } from "./lib/detect";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { CATEGORIES, clean, restore, summary, type Category, type Found } from "./lib/detect";
+import type { AiIn, AiOut } from "./worker/ai.worker";
+
+type AiState = { status: "loading"; pct: number } | { status: "ready" } | { status: "off" };
+
+/** In-browser AI check: scans ~300ms after typing stops; rule results show instantly meanwhile. */
+function useAi(text: string) {
+  const [state, setState] = useState<AiState>({ status: "loading", pct: 0 });
+  const [result, setResult] = useState<{ text: string; spans: Found[] }>({ text: "", spans: [] });
+  const worker = useRef<Worker | null>(null);
+  const seq = useRef(0);
+  const texts = useRef(new Map<number, string>());
+  useEffect(() => {
+    const w = new Worker(new URL("./worker/ai.worker.ts", import.meta.url), { type: "module" });
+    worker.current = w;
+    w.onmessage = (e: MessageEvent<AiOut>) => {
+      const m = e.data;
+      if (m.type === "progress") setState({ status: "loading", pct: m.pct });
+      else if (m.type === "ready") setState({ status: "ready" });
+      else if (m.type === "error") setState({ status: "off" });
+      else if (m.id === seq.current) setResult({ text: texts.current.get(m.id) ?? "", spans: m.spans });
+    };
+    return () => w.terminate();
+  }, []);
+  useEffect(() => {
+    if (!text.trim()) return;
+    const t = setTimeout(() => {
+      const id = ++seq.current;
+      texts.current = new Map([[id, text]]);
+      worker.current?.postMessage({ type: "scan", id, text } satisfies AiIn);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [text]);
+  return { state, spans: result.text === text ? result.spans : [] };
+}
 import { SAMPLE } from "./lib/fixtures";
 
 function useCopy() {
@@ -28,7 +62,8 @@ export default function App() {
   const [copied, copy] = useCopy();
   const [copiedR, copyR] = useCopy();
 
-  const result = useMemo(() => clean(input, enabled), [input, enabled]);
+  const ai = useAi(input);
+  const result = useMemo(() => clean(input, enabled, ai.spans), [input, enabled, ai.spans]);
   const restored = useMemo(() => restore(reply, result.map), [reply, result.map]);
 
   const toggle = (id: Category) =>
@@ -73,6 +108,13 @@ export default function App() {
           spellCheck={false}
           autoFocus
         />
+        <div className="ai" data-testid="ai">
+          {ai.state.status === "ready"
+            ? "AI check ready"
+            : ai.state.status === "off"
+              ? "AI check unavailable. Using rules only."
+              : `Loading AI check${ai.state.pct ? ` ${ai.state.pct}%` : ""}…`}
+        </div>
       </section>
 
       {input && (
@@ -115,7 +157,7 @@ export default function App() {
         </section>
       )}
 
-      <footer>Runs entirely in your browser. Nothing is uploaded or stored. <a href="https://github.com/gfxroy/clean-paste">Source</a></footer>
+      <footer>Runs entirely in your browser, AI check included. Nothing is uploaded or stored. <a href="https://github.com/gfxroy/clean-paste">Source</a></footer>
     </main>
   );
 }
