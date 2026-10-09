@@ -22,7 +22,7 @@ h1 { font-size: clamp(24px, 5.4vw, 32px); line-height: 1.15; font-weight: 600; l
 .chip:hover { color: var(--fg); }
 section { display: flex; flex-direction: column; gap: 10px; }
 .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-label, .label { font-size: 13px; font-weight: 500; }
+label, .label { font-size: 13px; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
 .count { font-size: 13px; color: var(--muted); text-align: right; }
 .link { background: none; border: 0; padding: 0; font-size: 13px; color: var(--muted); }
 .link:hover { color: var(--fg); }
