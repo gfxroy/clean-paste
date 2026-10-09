@@ -26,8 +26,9 @@ const progress_callback = (p: unknown) => {
 };
 
 async function load(): Promise<TokenClassificationPipeline> {
-  const gpu = (navigator as Navigator & { gpu?: unknown }).gpu;
-  const devices: ("webgpu" | "wasm")[] = gpu ? ["webgpu", "wasm"] : ["wasm"];
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu;
+  const adapter = gpu ? await gpu.requestAdapter().catch(() => null) : null;
+  const devices: ("webgpu" | "wasm")[] = adapter ? ["webgpu", "wasm"] : ["wasm"];
   let last: unknown;
   for (const device of devices) {
     try {
@@ -37,6 +38,7 @@ async function load(): Promise<TokenClassificationPipeline> {
       return p;
     } catch (e) {
       last = e;
+      console.warn(`AI check: ${device} failed`, e);
     }
   }
   throw last;
