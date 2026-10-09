@@ -1,17 +1,18 @@
-export type Category = "email" | "phone" | "card" | "key" | "ip" | "url" | "id" | "address";
+export type Category = "password" | "email" | "phone" | "card" | "key" | "ip" | "url" | "id" | "address";
 
 export const CATEGORIES: { id: Category; label: string }[] = [
   { id: "email", label: "Emails" },
   { id: "phone", label: "Phones" },
   { id: "card", label: "Cards" },
   { id: "key", label: "Keys" },
+  { id: "password", label: "Passwords" },
   { id: "url", label: "URLs" },
   { id: "ip", label: "IPs" },
   { id: "id", label: "IDs" },
   { id: "address", label: "Addresses" },
 ];
 
-type Tag = "EMAIL" | "PHONE" | "CARD" | "KEY" | "IP" | "URL" | "AADHAAR" | "PAN" | "SSN" | "ADDRESS";
+type Tag = "PASSWORD" | "EMAIL" | "PHONE" | "CARD" | "KEY" | "IP" | "URL" | "AADHAAR" | "PAN" | "SSN" | "ADDRESS";
 
 interface Rule {
   cat: Category;
@@ -19,7 +20,9 @@ interface Rule {
   re: RegExp;
   /** Capture group holding the sensitive part (default: whole match). */
   group?: number;
-  check?: (s: string) => boolean;
+  check?: (s: string, m: RegExpMatchArray) => boolean;
+  /** Override tag/category per match. */
+  pick?: (m: RegExpMatchArray) => { tag: Tag; cat: Category };
 }
 
 export function luhn(digits: string): boolean {
@@ -50,6 +53,12 @@ function looksRandom(s: string): boolean {
   return classes >= 2 && /\d/.test(s) && entropy(s) >= 3.6;
 }
 
+const PW_LABELS = "password|passwd|passcode|pass|pwd|otp|pin";
+const KEY_LABELS =
+  "api[_-]?key|apikey|access[_-]?key|access[_-]?token|client[_-]?secret|private[_-]?key|secret|token|bearer|auth|key";
+const PW_RE = /^(password|passwd|passcode|pass|pwd|otp|pin)$/i;
+const PLACEHOLDER = /^\[[A-Z]+_\d+\]$/;
+
 const octet = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
 
 // Order = priority. Earlier rules win when matches overlap.
@@ -61,12 +70,23 @@ const RULES: Rule[] = [
   { cat: "key", tag: "KEY", re: /\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,})\b/g },
   { cat: "key", tag: "KEY", re: /\bAIza[0-9A-Za-z_-]{35}/g },
   { cat: "key", tag: "KEY", re: /\b(?:xox[abprs]-[A-Za-z0-9-]{10,}|[sr]k_(?:live|test)_[A-Za-z0-9]{16,})/g },
+  // Labeled secrets: "password is x", "API_KEY=x", "key: x", "\"pass\": \"x\"", "?token=x". Only the value is replaced.
   {
     cat: "key",
     tag: "KEY",
-    re: /\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|auth)\b["']?\s*[:=]\s*["']?([^\s"',;]{6,})/gi,
-    group: 1,
+    re: new RegExp(
+      "(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*(" + PW_LABELS + "|" + KEY_LABELS + ")(?![A-Za-z0-9])[\"']?" +
+        "(\\s*[:=]\\s*|\\s+[-\u2013]\\s*|\\s*[-\u2013]\\s+|\\s+is\\s+)[\"']?([^\\s\"',&]+)",
+      "gi",
+    ),
+    group: 3,
+    check: (v, m) =>
+      !PLACEHOLDER.test(v) &&
+      !(/^\s*is\s*$/i.test(m[2]) && /^(key|pass|auth)$/i.test(m[1])) &&
+      !(/^pin$/i.test(m[1]) && !/^\s*[:=]\s*$/.test(m[2])),
+    pick: (m) => (PW_RE.test(m[1]) ? { tag: "PASSWORD", cat: "password" } : { tag: "KEY", cat: "key" }),
   },
+  { cat: "key", tag: "KEY", re: /\bBearer\s+([A-Za-z0-9._~+/-]{8,}=*)/g, group: 1 },
   {
     cat: "url",
     tag: "URL",
@@ -107,14 +127,17 @@ export function detect(text: string, enabled: Set<Category> = new Set(CATEGORIES
   const kept: Found[] = [];
   const overlaps = (s: number, e: number) => kept.some((k) => s < k.end && e > k.start);
   for (const r of RULES) {
-    if (!enabled.has(r.cat)) continue;
+    if (!r.pick && !enabled.has(r.cat)) continue;
     for (const m of text.matchAll(r.re)) {
       const whole = m[0];
       const part = r.group ? m[r.group] : whole;
-      if (!part || (r.check && !r.check(part))) continue;
-      const start = m.index! + (r.group ? whole.lastIndexOf(part) : 0);
+      if (!part || (r.check && !r.check(part, m))) continue;
+      const { tag, cat } = r.pick ? r.pick(m) : r;
+      if (!enabled.has(cat)) continue;
+      // Captured groups always sit at the end of the match.
+      const start = m.index! + whole.length - part.length;
       const end = start + part.length;
-      if (!overlaps(start, end)) kept.push({ start, end, value: part, tag: r.tag, cat: r.cat });
+      if (!overlaps(start, end)) kept.push({ start, end, value: part, tag, cat });
     }
   }
   return kept.sort((a, b) => a.start - b.start);
@@ -164,6 +187,7 @@ export function restore(reply: string, map: Map<string, string>): string {
 }
 
 const NOUNS: Record<Tag, [string, string]> = {
+  PASSWORD: ["password", "passwords"],
   EMAIL: ["email", "emails"],
   PHONE: ["phone number", "phone numbers"],
   CARD: ["card number", "card numbers"],

@@ -15,7 +15,8 @@ Paste a log, an email thread, a support ticket or some code. Clean Paste swaps o
   - emails
   - phone numbers (Indian +91, US, international)
   - card numbers (Luhn-checked)
-  - API keys and tokens (OpenAI, AWS, GitHub, Google, Slack, Stripe, JWTs, private keys, `password=` values, generic high-entropy strings)
+  - API keys and tokens (OpenAI, AWS, GitHub, Google, Slack, Stripe, JWTs, private keys, generic high-entropy strings)
+  - labeled secrets: `password is …`, `key: …`, `DB_PASSWORD=…`, `"token": "…"`, `?token=…`, `Bearer …` (only the value is hidden, the label stays)
   - IPv4/IPv6 addresses
   - URLs carrying tokens or credentials
   - Aadhaar, PAN and SSN numbers
